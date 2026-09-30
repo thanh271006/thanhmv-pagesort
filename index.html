@@ -72,6 +72,10 @@
     .page-card.assigned { background:#f6fbf8; }
     .page-card.assigned::after { content:"Đã xếp"; position:absolute; top:12px; right:12px; color:#267264; background:#e1f4eb; border-radius:6px; padding:3px 5px; font-size:9px; font-weight:800; }
     .page-card .thumb-wrap { cursor:zoom-in; }
+    .page-select { display:block; width:100%; border:0; padding:0; background:transparent; color:inherit; text-align:left; border-radius:9px; }
+    .rotate-page { position:absolute; right:8px; bottom:3px; width:44px; height:36px; border:1px solid var(--line); border-radius:8px; background:white; color:var(--teal-dark); font-size:22px; }
+    .rotate-page:hover { background:var(--mint); border-color:var(--teal); }
+    .page-label { margin-right:44px; }
     .thumb-wrap { height:180px; display:flex; align-items:center; justify-content:center; overflow:hidden; border-radius:9px; background:#f0f4f2; }
     .thumb-wrap canvas { display:block; max-width:100%; max-height:100%; }
     .page-label { display:flex; justify-content:space-between; gap:6px; align-items:center; padding:9px 3px 2px; font-size:12px; font-weight:800; }
@@ -222,26 +226,85 @@
       els.binsGrid.querySelectorAll('[data-bin-drop]').forEach(drop => { drop.addEventListener('dragover', e => { e.preventDefault(); drop.closest('.bin-card').classList.add('dragging-over'); }); drop.addEventListener('dragleave', () => drop.closest('.bin-card').classList.remove('dragging-over')); drop.addEventListener('drop', e => { e.preventDefault(); drop.closest('.bin-card').classList.remove('dragging-over'); if (!state.dragPage) return; const target=Number(drop.dataset.binDrop); const source=state.bins[state.dragPage.bin]; source.pages=source.pages.filter(p => p!==state.dragPage.page); state.bins[target].pages.push(state.dragPage.page); renderBins(); renderPages(); updateSummary(); }); });
       updateSummary();
     }
-    function updateSummary() { const totalAssigned = state.bins.reduce((sum,b) => sum+b.pages.length,0); els.progressText.textContent = `${totalAssigned} / ${state.pages.length} trang`; els.exportBtn.disabled = !state.pages.length || totalAssigned !== state.pages.length; }
+    function updateSummary() { const totalAssigned = state.bins.reduce((sum,b) => sum+b.pages.length,0); els.progressText.textContent = `${totalAssigned} / ${state.pages.length} trang`; els.exportBtn.disabled = !state.pages.length || totalAssigned === 0; }
     function pageBin(page) { return state.bins.findIndex(b => b.pages.includes(page)); }
     function assignSelected(binIndex) { if (!state.selected.size) { setStatus('Hãy chọn ít nhất một trang trước', 'error'); return; } const pages=[...state.selected].sort((a,b)=>a-b); state.bins.forEach(b => b.pages=b.pages.filter(p=>!state.selected.has(p))); state.bins[binIndex].pages.push(...pages.filter(p => !state.bins[binIndex].pages.includes(p))); state.selected.clear(); renderBins(); renderPages(); updateSummary(); setStatus(`${pages.length} trang đã đưa vào chuồng ${state.bins[binIndex].name || binIndex+1}`, 'ok'); }
     function removePage(binIndex, page) { state.bins[binIndex].pages=state.bins[binIndex].pages.filter(p=>p!==page); renderBins(); renderPages(); updateSummary(); }
-    function syncPageSelectionUI() { els.selectInfo.textContent = state.selected.size ? `${state.selected.size} trang đang chọn` : 'Chưa chọn trang'; els.pagesGrid.querySelectorAll('[data-page-number]').forEach(card => { const n=Number(card.dataset.pageNumber); card.classList.toggle('selected', state.selected.has(n)); card.setAttribute('aria-pressed', String(state.selected.has(n))); }); els.binsGrid.querySelectorAll('[data-assign-bin]').forEach(btn => { btn.textContent = `Nhập${state.selected.size ? ` (${state.selected.size})` : ''}`; btn.disabled = !state.selected.size; }); }
-    function renderPages() { const visiblePages=state.pages.filter(p => pageBin(p.number) < 0); if (!state.pages.length) { els.pagesGrid.innerHTML=emptyMarkup(); els.selectInfo.textContent='Chưa chọn trang'; return; } if (!visiblePages.length) { els.pagesGrid.innerHTML=allSortedMarkup(); els.selectInfo.textContent='Đã xếp hết trang'; return; } els.pagesGrid.innerHTML=visiblePages.map(p => `<button class="page-card ${state.selected.has(p.number)?'selected':''}" data-page-number="${p.number}" type="button" aria-label="Trang ${p.number}, chưa xếp"><div class="thumb-wrap"><canvas id="thumb-${p.number}"></canvas></div><div class="page-label"><span>Trang ${p.number}</span><span>Chưa xếp</span></div></button>`).join(''); els.pagesGrid.querySelectorAll('[data-page-number]').forEach(card => { card.addEventListener('click', e => selectPage(Number(card.dataset.pageNumber), e)); card.addEventListener('dblclick', () => openViewer(Number(card.dataset.pageNumber))); }); els.selectInfo.textContent = state.selected.size ? `${state.selected.size} trang đang chọn` : `${visiblePages.length} trang chưa xếp`; visiblePages.forEach(p => drawThumb(p)); }
-    async function drawThumb(pageInfo) { const canvas=document.getElementById(`thumb-${pageInfo.number}`); if (!canvas || !state.pdf) return; const page=await state.pdf.getPage(pageInfo.number); const base=page.getViewport({scale:1}); const scale=Math.min(0.36, 156/base.width); const viewport=page.getViewport({scale}); canvas.width=viewport.width; canvas.height=viewport.height; await page.render({canvasContext:canvas.getContext('2d'), viewport}).promise; }
+    function syncPageSelectionUI() { els.selectInfo.textContent = state.selected.size ? `${state.selected.size} trang đang chọn` : 'Chưa chọn trang'; els.pagesGrid.querySelectorAll('[data-page-number]').forEach(card => { const n=Number(card.dataset.pageNumber); card.classList.toggle('selected', state.selected.has(n)); card.querySelector('.page-select').setAttribute('aria-pressed', String(state.selected.has(n))); }); els.binsGrid.querySelectorAll('[data-assign-bin]').forEach(btn => { btn.textContent = `Nhập${state.selected.size ? ` (${state.selected.size})` : ''}`; btn.disabled = !state.selected.size; }); }
+    function renderPages() {
+      const visiblePages=state.pages.filter(p => pageBin(p.number) < 0);
+      if (!state.pages.length) { els.pagesGrid.innerHTML=emptyMarkup(); els.selectInfo.textContent='Chưa chọn trang'; return; }
+      if (!visiblePages.length) { els.pagesGrid.innerHTML=allSortedMarkup(); els.selectInfo.textContent='Đã xếp hết trang'; return; }
+      els.pagesGrid.innerHTML=visiblePages.map(p => `<article class="page-card ${state.selected.has(p.number)?'selected':''}" data-page-number="${p.number}">
+        <button class="page-select" type="button" aria-pressed="${state.selected.has(p.number)}" aria-label="Trang ${p.number}, chưa xếp">
+          <span class="thumb-wrap"><canvas id="thumb-${p.number}"></canvas></span>
+          <span class="page-label"><span>Trang ${p.number}</span><span class="rotation-label">${p.rotation ? `${p.rotation}°` : ''}</span></span>
+        </button>
+        <button class="rotate-page" type="button" aria-label="Xoay trang ${p.number} 90 độ" title="Xoay 90° sang phải">↻</button>
+      </article>`).join('');
+      els.pagesGrid.querySelectorAll('[data-page-number]').forEach(card => {
+        const number=Number(card.dataset.pageNumber);
+        card.querySelector('.page-select').addEventListener('click', e => { if(e.detail < 2) selectPage(number, e); });
+        card.querySelector('.page-select').addEventListener('dblclick', () => openViewer(number));
+        card.querySelector('.rotate-page').addEventListener('click', () => rotatePage(number));
+      });
+      els.selectInfo.textContent=state.selected.size ? `${state.selected.size} trang đang chọn` : `${visiblePages.length} trang chưa xếp`;
+      visiblePages.forEach(p => drawThumb(p));
+    }
+    function rotationFor(number) { return state.pages.find(p=>p.number===number)?.rotation || 0; }
+    function rotatePage(number) {
+      const info=state.pages.find(p=>p.number===number);
+      if (!info) return;
+      info.rotation=((info.rotation || 0)+90)%360;
+      const card=els.pagesGrid.querySelector(`[data-page-number="${number}"]`);
+      if(card) card.querySelector('.rotation-label').textContent=info.rotation ? `${info.rotation}°` : '';
+      drawThumb(info);
+      if(viewerPage===number) drawViewer();
+    }
+    async function drawThumb(info) {
+      const holder=document.getElementById(`thumb-${info.number}`)?.parentElement, pdf=state.pdf;
+      if (!holder || !pdf) return;
+      const revision=info.renderRevision=(info.renderRevision || 0)+1, delta=info.rotation || 0;
+      try {
+        const page=await pdf.getPage(info.number), rotation=(page.rotate+delta)%360;
+        const base=page.getViewport({scale:1,rotation});
+        const viewport=page.getViewport({scale:Math.min(312/base.width,360/base.height),rotation});
+        // Separate canvases prevent overlapping renders during rapid rotation.
+        const canvas=document.createElement('canvas'); canvas.id=`thumb-${info.number}`;
+        canvas.width=Math.ceil(viewport.width); canvas.height=Math.ceil(viewport.height);
+        await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+        if(state.pdf===pdf && holder.isConnected && info.renderRevision===revision) holder.replaceChildren(canvas);
+      } catch(err) { console.error(err); }
+    }
     function selectPage(number, event) { const nums=state.pages.filter(p=>pageBin(p.number)<0).map(p=>p.number); if (event.shiftKey && state.lastSelected !== null) { const a=nums.indexOf(state.lastSelected), b=nums.indexOf(number); if (a < 0 || b < 0) return; nums.slice(Math.min(a,b), Math.max(a,b)+1).forEach(n=>state.selected.add(n)); } else { state.selected.has(number) ? state.selected.delete(number) : state.selected.add(number); state.lastSelected=number; } syncPageSelectionUI(); }
-    let viewerPage = null, viewerZoom = 1;
-    async function drawViewer() { if (!viewerPage || !state.pdf) return; const page=await state.pdf.getPage(viewerPage); const base=page.getViewport({scale:1}); const stage=document.querySelector('.viewer-stage'); const fit=Math.min((stage.clientWidth-56)/base.width,(stage.clientHeight-56)/base.height); const scale=Math.max(.25,fit*viewerZoom); const viewport=page.getViewport({scale}); const canvas=document.getElementById('viewerCanvas'); canvas.width=viewport.width; canvas.height=viewport.height; await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise; document.getElementById('viewerTitle').textContent=`Xem trang ${viewerPage} · ${Math.round(scale*100)}%`; document.getElementById('zoomReset').textContent=`${Math.round(viewerZoom*100)}%`; }
+    let viewerPage=null, viewerZoom=1, viewerRevision=0;
+    async function drawViewer() {
+      if (!viewerPage || !state.pdf) return;
+      const number=viewerPage, pdf=state.pdf, revision=++viewerRevision;
+      try {
+        const page=await pdf.getPage(number), rotation=(page.rotate+rotationFor(number))%360;
+        const base=page.getViewport({scale:1,rotation}), stage=document.querySelector('.viewer-stage');
+        const fit=Math.min((stage.clientWidth-56)/base.width,(stage.clientHeight-56)/base.height);
+        const scale=Math.max(.25,fit*viewerZoom), viewport=page.getViewport({scale,rotation});
+        const canvas=document.createElement('canvas'); canvas.id='viewerCanvas';
+        canvas.width=Math.ceil(viewport.width); canvas.height=Math.ceil(viewport.height);
+        await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+        if(revision!==viewerRevision || viewerPage!==number || state.pdf!==pdf) return;
+        stage.replaceChildren(canvas);
+        document.getElementById('viewerTitle').textContent=`Xem trang ${number} · ${Math.round(scale*100)}%`;
+        document.getElementById('zoomReset').textContent=`${Math.round(viewerZoom*100)}%`;
+      } catch(err) { console.error(err); }
+    }
     function openViewer(number) { viewerPage=number; viewerZoom=1; document.getElementById('viewer').classList.add('open'); document.body.style.overflow='hidden'; drawViewer(); }
     function closeViewer() { document.getElementById('viewer').classList.remove('open'); document.body.style.overflow=''; viewerPage=null; }
     document.getElementById('viewerClose').addEventListener('click', closeViewer); document.getElementById('zoomIn').addEventListener('click', () => { viewerZoom=Math.min(4,viewerZoom+.25); drawViewer(); }); document.getElementById('zoomOut').addEventListener('click', () => { viewerZoom=Math.max(.5,viewerZoom-.25); drawViewer(); }); document.getElementById('zoomReset').addEventListener('click', () => { viewerZoom=1; drawViewer(); }); document.getElementById('viewer').addEventListener('click', e => { if(e.target.id==='viewer') closeViewer(); }); document.addEventListener('keydown', e => { if(e.key==='Escape') closeViewer(); }); window.addEventListener('resize', () => { if(viewerPage) drawViewer(); });
-    async function loadPdf(file) { state.file=file; state.bytes=new Uint8Array(await file.arrayBuffer()); state.pdf=await pdfjsLib.getDocument({data:state.bytes.slice()}).promise; state.pages=Array.from({length:state.pdf.numPages}, (_,i)=>({number:i+1})); state.selected.clear(); state.lastSelected=null; state.bins.forEach(b=>b.pages=[]); els.fileMeta.innerHTML=`<strong>${escapeAttr(file.name)}</strong><span>· ${state.pdf.numPages} trang · ${formatBytes(file.size)}</span>`; renderPages(); renderBins(); setStatus('PDF đã sẵn sàng để phân loại', 'ok'); }
+    async function loadPdf(file) { state.file=file; state.bytes=new Uint8Array(await file.arrayBuffer()); state.pdf=await pdfjsLib.getDocument({data:state.bytes.slice()}).promise; state.pages=Array.from({length:state.pdf.numPages}, (_,i)=>({number:i+1,rotation:0})); state.selected.clear(); state.lastSelected=null; state.bins.forEach(b=>b.pages=[]); els.fileMeta.innerHTML=`<strong>${escapeAttr(file.name)}</strong><span>· ${state.pdf.numPages} trang · ${formatBytes(file.size)}</span>`; renderPages(); renderBins(); setStatus('PDF đã sẵn sàng để phân loại', 'ok'); }
     els.fileInput.addEventListener('change', async e => { const file=e.target.files[0]; if (!file) return; try { setStatus('Đang đọc PDF…'); await loadPdf(file); } catch (err) { console.error(err); setStatus('Không thể đọc file PDF này', 'error'); els.fileMeta.textContent='File không hợp lệ hoặc đã bị hỏng'; } });
     els.selectAll.addEventListener('click', () => { const visible=state.pages.filter(p=>pageBin(p.number)<0); state.selected=new Set(visible.map(p=>p.number)); state.lastSelected=visible.at(-1)?.number ?? null; syncPageSelectionUI(); });
     els.clearSelection.addEventListener('click', () => { state.selected.clear(); syncPageSelectionUI(); });
     els.applyBins.addEventListener('click', () => { const count=Math.max(1,Math.min(8,Number(els.binCount.value)||1)); const old=state.bins; state.bins=Array.from({length:count},(_,i)=>old[i]||({name:String.fromCharCode(65+i),pages:[]})); renderBins(); renderNameConfig(); });
     els.toggleNames.addEventListener('click', () => els.nameConfig.classList.toggle('open'));
-    els.exportBtn.addEventListener('click', async () => { if (els.exportBtn.disabled) return; try { els.exportBtn.disabled=true; setStatus('Đang tạo file PDF mới…'); const source=await PDFLib.PDFDocument.load(state.bytes.slice()); const output=await PDFLib.PDFDocument.create(); const ordered=state.bins.flatMap(b=>b.pages); const copied=await output.copyPages(source, ordered.map(p=>p-1)); copied.forEach(page=>output.addPage(page)); const bytes=await output.save(); const blob=new Blob([bytes],{type:'application/pdf'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`${(state.file?.name||'pagesort').replace(/\.pdf$/i,'')}-pagesort.pdf`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); setStatus(`Đã xuất ${ordered.length} trang theo thứ tự các chuồng`, 'ok'); } catch (err) { console.error(err); setStatus(`Xuất PDF thất bại: ${err?.message || 'không xác định'}`, 'error'); } finally { updateSummary(); } });
+    els.exportBtn.addEventListener('click', async () => { if (els.exportBtn.disabled) return; const ordered=state.bins.flatMap(b=>b.pages); const remaining=state.pages.length-ordered.length; if (remaining>0 && !window.confirm(`Còn ${remaining} trang chưa xếp. Xuất chỉ ${ordered.length} trang đã nằm trong chuồng?`)) return; try { els.exportBtn.disabled=true; setStatus('Đang tạo file PDF mới…'); const source=await PDFLib.PDFDocument.load(state.bytes.slice()); const output=await PDFLib.PDFDocument.create(); const copied=await output.copyPages(source, ordered.map(p=>p-1)); copied.forEach((page,i)=>{ page.setRotation(PDFLib.degrees((page.getRotation().angle+rotationFor(ordered[i]))%360)); output.addPage(page); }); const bytes=await output.save(); const blob=new Blob([bytes],{type:'application/pdf'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`${(state.file?.name||'pagesort').replace(/\.pdf$/i,'')}-pagesort.pdf`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); setStatus(`Đã xuất ${ordered.length} trang theo thứ tự các chuồng`, 'ok'); } catch (err) { console.error(err); setStatus(`Xuất PDF thất bại: ${err?.message || 'không xác định'}`, 'error'); } finally { updateSummary(); } });
     initBins();
   </script>
 </body>
